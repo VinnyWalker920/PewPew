@@ -19,7 +19,7 @@ Ext.define("pve-qemu-power-summary", {
               try {
                 let data = JSON.parse(response);
                 let watts = data.watts + " W";
-                let cost = "$" + data.cost + " /month";
+                let kwh = data.kwh + " kWh";
 
                 // append to Summary Info box
                 me.down("#info").add({
@@ -27,8 +27,8 @@ Ext.define("pve-qemu-power-summary", {
                   html:
                     '<div style="padding:2px 0;padding-left:6px;"><b>Power:</b> ' +
                     watts +
-                    "  |  <b>Cost:</b> " +
-                    cost +
+                    "  |  <b>KWH:</b> " +
+                    kwh +
                     "</div>",
                 });
               } catch (e) {}
