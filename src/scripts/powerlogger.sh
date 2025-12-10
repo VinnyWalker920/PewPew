@@ -1,42 +1,50 @@
 #!/bin/bash
 
 DB="/var/lib/vm_power/vm_power.db"
-# location for AMD/Intel auto-detect
-RAPL_PATH=$(ls /sys/class/powercap/intel-rapl:0/energy_uj 2>/dev/null)
-if [ -n "$RAPL_PATH" ]; then
-    read_power() {
-        cat $RAPL_PATH
-    }
+
+NODE=$(hostname -s)
+
+# Detect RAPL or ZenPower
+if [ -f /sys/class/powercap/intel-rapl:0/energy_uj ]; then
+    read_power() { cat /sys/class/powercap/intel-rapl:0/energy_uj; }
 else
-    # fallback for Zenpower
-    read_power() {
-        cat /sys/class/hwmon/hwmon*/power1_input 2>/dev/null
-    }
+    read_power() { cat /sys/class/hwmon/hwmon*/power1_input 2>/dev/null; }
 fi
 
 while true; do
     T=$(date +%s)
 
-    # raw energy/watts
     W=$(read_power)
 
-    # record host value
     sqlite3 "$DB" "INSERT INTO host_power VALUES ($T, $W);"
 
-    # total CPU/RAM for weighting
     TOTAL_RAM=$(grep MemTotal /proc/meminfo | awk '{print $2 * 1024}')
 
-    # loop VMs
-    for VM in $(qm list | awk 'NR>1 {print $1}'); do
-        CPU=$(pvesh get /nodes/$(hostname)/qemu/$VM/status/current 2>/dev/null | jq -r '.cpu')
-        RAM=$(pvesh get /nodes/$(hostname)/qemu/$VM/status/current 2>/dev/null | jq -r '.mem')
+    # load all VM info once to avoid jq errors
+    VMINFO=$(pvesh get /nodes/$NODE/qemu --output-format=json 2>/dev/null)
 
-        [ -z "$CPU" ] && continue
+    echo "$VMINFO" | jq empty 2>/dev/null || {
+        echo "ERROR: pvesh returned invalid JSON. Skipping loop."
+        sleep 5
+        continue
+    }
+
+    for VM in $(echo "$VMINFO" | jq -r '.[].vmid'); do
+
+        STATUS=$(pvesh get /nodes/$NODE/qemu/$VM/status/current --output-format=json 2>/dev/null)
+
+        # check JSON validity
+        echo "$STATUS" | jq empty 2>/dev/null || continue
+
+        CPU=$(echo "$STATUS" | jq -r '.cpu')
+        RAM=$(echo "$STATUS" | jq -r '.mem')
+
+        [ "$CPU" = "null" ] && continue
+        [ "$RAM" = "null" ] && RAM=0
 
         CPU_P=$(echo "$CPU" | bc -l)
         RAM_P=$(echo "$RAM / $TOTAL_RAM" | bc -l)
 
-        # Weighted estimate
         VM_W=$(echo "$W * (($CPU_P * 0.85) + ($RAM_P * 0.15))" | bc -l)
 
         sqlite3 "$DB" "INSERT INTO vm_power VALUES ($T, $VM, $VM_W);"
