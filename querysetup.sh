@@ -11,7 +11,7 @@ chmod +x "$DST_PATH"
 
 # Test query on VMID102
 echo "Testing query..."
-if [ -n "$($DST_PATH 102)" ]; then
+if $DST_PATH 102 >/dev/null 2>&1; then
     echo "Query is working."
 else
     echo "Query is not working."
