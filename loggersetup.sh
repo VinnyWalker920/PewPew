@@ -26,7 +26,7 @@ EOF
 echo "Created Services"
 
 #start the sevice 
-systemctl enable --now vm-power.service
+systemctl enable --now powerlogger.service
 
 #test the service
 if systemctl -q is-active powerlogger.service; then
